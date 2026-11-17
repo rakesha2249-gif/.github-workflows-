@@ -1,0 +1,60 @@
+name: Patch APK resources.arsc
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_path:
+        description: 'ರೆಪೊಸಿಟರಿಯಲ್ಲಿರುವ APK ಫೈಲ್ ವಿಳಾಸ (ಉದಾ: input/framework-res.apk)'
+        required: true
+        default: 'input/framework-res.apk'
+      framework_path:
+        description: 'ಅಗತ್ಯವಿದ್ದರೆ ಹೆಚ್ಚುವರಿ framework-res.apk ಪಾತ್ ಹಾಕಿ (ಖಾಲಿ ಬಿಡಬಹುದು)'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Apktool & Build-Tools
+        run: |
+          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
+          wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
+          chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
+          
+          BUILD_TOOLS=$(find$ANDROID_HOME/build-tools -maxdepth 1 | sort -V | tail -n 1)
+          echo "$BUILD_TOOLS" >> $GITHUB_PATH
+
+      - name: Install Framework (ಅಗತ್ಯವಿದ್ದರೆ)
+        if: github.event.inputs.framework_path != ''
+        run: apktool if "${{ github.event.inputs.framework_path }}"
+
+      - name: Decode & Modify resources.arsc
+        run: |
+          # framework-res ಅಥವಾ ಸಿಸ್ಟಮ್ APK ಗಾಗಿ ಡಿಫ್ರೇಮ್‌ವರ್ಕ್ ರಿಜಿಸ್ಟರ್ ಮಾಡುವುದು
+          apktool if "${{ github.event.inputs.apk_path }}"
+          
+          # APK ಡೆಕೋಡ್ ಮಾಡುವುದು
+          apktool d "${{ github.event.inputs.apk_path }}" -o decoded_apk
+          
+          # ಇಲ್ಲಿ ನಿಮ್ಮ ಅವಶ್ಯಕತೆಗೆ ತಕ್ಕಂತೆ XML ಅಥವಾ ಶ್ರೇಣಿಗಳನ್ನು ಬದಲಾಯಿಸಬಹುದು
+          # ಉದಾಹರಣೆಗೆ: sed -i 's/Old Text/New Text/g' decoded_apk/res/values/strings.xml
+
+      - name: Rebuild, Align (STORE) & Sign
+        run: |
+          apktool b decoded_apk -o unsigned.apk
+          
+          # Android 11+ ಗಾಗಿ resources.arsc ಕಂಪ್ರೆಸ್ ಆಗದಂತೆ (STORE -0) ಮರುಸೇರಿಸುವುದು
+          unzip -o unsigned.apk resources.arsc -d temp_arsc/
+          cp "${{ github.event.inputs.apk_path }}" final_apk.apk
+          zip -j -0 final_apk
+          
+          
