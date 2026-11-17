@@ -1,15 +1,7 @@
-name: Patch APK resources.arsc
+name: Patch framework-res.apk
 
 on:
   workflow_dispatch:
-    inputs:
-      apk_path:
-        description: 'ರೆಪೊಸಿಟರಿಯಲ್ಲಿರುವ APK ಫೈಲ್ ವಿಳಾಸ (ಉದಾ: input/framework-res.apk)'
-        required: true
-        default: 'input/framework-res.apk'
-      framework_path:
-        description: 'ಅಗತ್ಯವಿದ್ದರೆ ಹೆಚ್ಚುವರಿ framework-res.apk ಪಾತ್ ಹಾಕಿ (ಖಾಲಿ ಬಿಡಬಹುದು)'
-        required: false
 
 jobs:
   build:
@@ -29,32 +21,30 @@ jobs:
           wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
           wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
           chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          
-          BUILD_TOOLS=$(find$ANDROID_HOME/build-tools -maxdepth 1 | sort -V | tail -n 1)
+          BUILD_TOOLS=$(find $ANDROID_HOME/build-tools -maxdepth 1 | sort -V | tail -n 1)
           echo "$BUILD_TOOLS" >> $GITHUB_PATH
 
-      - name: Install Framework (ಅಗತ್ಯವಿದ್ದರೆ)
-        if: github.event.inputs.framework_path != ''
-        run: apktool if "${{ github.event.inputs.framework_path }}"
-
-      - name: Decode & Modify resources.arsc
+      - name: Download APK from Direct Link
         run: |
-          # framework-res ಅಥವಾ ಸಿಸ್ಟಮ್ APK ಗಾಗಿ ಡಿಫ್ರೇಮ್‌ವರ್ಕ್ ರಿಜಿಸ್ಟರ್ ಮಾಡುವುದು
-          apktool if "${{ github.event.inputs.apk_path }}"
-          
-          # APK ಡೆಕೋಡ್ ಮಾಡುವುದು
-          apktool d "${{ github.event.inputs.apk_path }}" -o decoded_apk
-          
-          # ಇಲ್ಲಿ ನಿಮ್ಮ ಅವಶ್ಯಕತೆಗೆ ತಕ್ಕಂತೆ XML ಅಥವಾ ಶ್ರೇಣಿಗಳನ್ನು ಬದಲಾಯಿಸಬಹುದು
-          # ಉದಾಹರಣೆಗೆ: sed -i 's/Old Text/New Text/g' decoded_apk/res/values/strings.xml
+          mkdir -p input
+          wget -O input/framework-res.apk "https://f2l3.reaperzclub.dpdns.org/xp1cy0q?hash=AgAD3S&dl=1"
 
-      - name: Rebuild, Align (STORE) & Sign
+      - name: Decode & Modify Framework
         run: |
-          apktool b decoded_apk -o unsigned.apk
-          
-          # Android 11+ ಗಾಗಿ resources.arsc ಕಂಪ್ರೆಸ್ ಆಗದಂತೆ (STORE -0) ಮರುಸೇರಿಸುವುದು
+          apktool if input/framework-res.apk
+          apktool d input/framework-res.apk -o decoded_fw
+
+      - name: Rebuild and Align Uncompressed ARSC
+        run: |
+          apktool b decoded_fw -o unsigned.apk
           unzip -o unsigned.apk resources.arsc -d temp_arsc/
-          cp "${{ github.event.inputs.apk_path }}" final_apk.apk
-          zip -j -0 final_apk
-          
+          cp input/framework-res.apk final_framework.apk
+          zip -j -0 final_framework.apk temp_arsc/resources.arsc
+          zipalign -p -f -v 4 final_framework.apk framework-res-patched.apk
+
+      - name: Upload Patched Framework Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-framework
+          path: framework-res-patched.apk
           
